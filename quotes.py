@@ -10,19 +10,20 @@ import threading
 
 import ipdb
 
-async def subscribe(manipulator):
-    async with websockets.connect(manipulator.uri) as websocket:
-        await websocket.send(manipulator.sub)
-        async for message in websocket:
-            if manipulator.accessor(message):
-                await websocket.close()
+class Manipulator:
+    async def process(self):
+        async with websockets.connect(self.uri) as websocket:
+            await websocket.send(self.sub)
+            async for message in websocket:
+                if self.accessor(message):
+                    await websocket.close()
 
-class Deribit:
+class Deribit(Manipulator):
     uri = 'wss://www.deribit.com/ws/api/v2/'
     #sub = '{"id":36,"method":"public/subscribe","params":{"channels":["ticker.BTC-28MAY21.100ms"]}}'
 
     def __init__(self, collect_timeout = 1):
-        self.sub = {"id":36,"method":"public/subscribe","params":{"channels":[]}}
+        self.sub = {"id":1,"method":"public/subscribe","params":{"channels":[]}}
         today = datetime.date.today()
         increment = 0 
         for weeks in range(54):
@@ -34,6 +35,10 @@ class Deribit:
         self.res = []
         self.tick = time.time()
         self.collect_timeout = collect_timeout
+
+    def _determine_expiration(self, symbol):
+        from datetime import datetime
+        return datetime.strptime(symbol, "BTC-%d%b%y")
 
     def accessor(self, obj):
         if time.time() - self.tick > self.collect_timeout:
@@ -48,19 +53,13 @@ class Deribit:
                 'symbol': fut['instrument_name'],
                 'mark'  : fut['mark_price'],
                 'last'  : fut['last_price'],
-                'index' : fut['index_price']
+                'index' : fut['index_price'],
+                'expir' : self._determine_expiration(fut['instrument_name'])
             })
         finally:
             return False
 
-    async def process(self):
-        async with websockets.connect(self.uri) as websocket:
-            await websocket.send(self.sub)
-            async for message in websocket:
-                if self.accessor(message):
-                    await websocket.close()
-
-class Bybit:
+class Bybit(Manipulator):
     uri = 'wss://ws2.bybit.com/realtime' 
     #bybit_sub = '{"op":"subscribe","args":["public.notice","instrument_info.all","index_quote_20.100ms.BTCUSDM21"]}'
 
@@ -68,6 +67,28 @@ class Bybit:
         self.sub = {"op":"subscribe","args":["instrument_info.all"]}
         self.sub = json.dumps(self.sub)
 
+    def _determine_expiration(self, symbol):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta, FR
+        def switcher(symbol):
+            match = re.match('BTCUSD(.)(\d{2})', symbol)
+            L = match[1]
+            year = match[2]
+
+            if      L == 'K': # March
+                return datetime.strptime("0104" + year, "%d%m%y")
+            elif    L == 'M': # June
+                return datetime.strptime("0107" + year, "%d%m%y")
+            elif    L == 'U': # September
+                return datetime.strptime("0110" + year, "%d%m%y")
+            elif    L == 'Z': # December
+                return datetime.strptime("0101" + str(int(year) + 1), "%d%m%y")
+            else:
+                raise Exception("I do not understand this quarter letter!")
+
+        return switcher(symbol) + relativedelta(days=-1, weekday=FR(-1))
+
+
     def accessor(self, obj):
         obj = json.loads(obj)
         try:
@@ -76,74 +97,54 @@ class Bybit:
             for fut in inverse_futures:
                 res.append({
                     'symbol': fut['symbol'],
-                    'mark'  : fut['mark_price_e4'],
-                    'last'  : fut['last_price_e4'],
-                    'index' : fut['index_price_e4']
+                    'mark'  : float(fut['mark_price_e4']) / 10000,
+                    'last'  : float(fut['last_price_e4']) / 10000,
+                    'index' : float(fut['index_price_e4'])/ 10000,
+                    'expir' : self._determine_expiration(fut['symbol'])
                 })
             self.res = res
             return True
         except KeyError:
             return False
 
-    async def process(self):
-        async with websockets.connect(self.uri) as websocket:
-            await websocket.send(self.sub)
-            async for message in websocket:
-                if self.accessor(message):
-                    await websocket.close()
+class Binance(Manipulator):
+    uri = 'wss://dstream.binance.com/ws/rawstream' 
 
-class Binance:
-    def __init__(self, collect_timeout = 5):
-        from binance.client import Client
-        from binance.websockets import BinanceFuturesSocketManager
-        client = Client('', '')
-        bfm = BinanceFuturesSocketManager(client)
-        bfm.start_futures_markprice_socket(self.accessor)
-        self.collect_timeout = collect_timeout
-        self.bfm = bfm
-        self.accessed = threading.Event()
+    def __init__(self):
+        self.sub = { "method": "SUBSCRIBE", "params": [ "btcusd@markPrice@1s" ], "id": 1 }
+        self.sub = json.dumps(self.sub)
+
+    def _determine_expiration(self, symbol):
+        from datetime import datetime
+        return datetime.strptime(symbol, "BTCUSD_%y%m%d")
 
     def accessor(self, obj):
-        ipdb.set_trace()
-        print(obj)
-        return
         obj = json.loads(obj)
         try:
-            inverse_futures = list(filter(lambda e: re.match('BTCUSD[A-Z]\d{2}', e['symbol']), obj['data']))
+            delivery_futures = list(filter(lambda e: re.match('BTCUSD_\d{6}', e['s']), obj))
             res = []
-            for fut in inverse_futures:
+            for fut in delivery_futures:
                 res.append({
-                    'symbol': fut['symbol'],
-                    'mark'  : fut['mark_price_e4'],
-                    'last'  : fut['last_price_e4'],
-                    'index' : fut['index_price_e4']
+                    'symbol': fut['s'],
+                    'mark'  : float(fut['p']),
+                    'last'  : None,
+                    'index' : None,
+                    'expir' : self._determine_expiration(fut['s'])
                 })
             self.res = res
             return True
-        except KeyError:
+        except:
             return False
-        self.accessed.set()
 
-    async def process(self):
-        self.bfm.start()
-        try:
-            loop = asyncio.get_running_loop()
-            await asyncio.wait_for(loop.run_in_executor(None, self.accessed.wait), self.collect_timeout)
-        finally:
-            self.bfm.reactor.callFromThread(self.bfm.reactor.stop)
-            print(">>>> JOINED")
-    
-
-o = Binance()
-#o = Deribit()
-
-asyncio.get_event_loop().run_until_complete(
-    o.process()
-    #subscribe(bybit_uri, bybit_sub, bybit_accessor)
-    #subscribe(binance_uri, binance_sub, binance_accessor)
-)
-print(o.res)
-
-#o.bfm.start()
-
-#print(o.res)
+def get_future_data():
+    deribit = Deribit()
+    binance = Binance()
+    bybit = Bybit()
+    asyncio.get_event_loop().run_until_complete(
+        asyncio.gather(
+            deribit.process(), binance.process(), bybit.process()
+        )
+    )
+    print(deribit.res)
+    print(bybit.res)
+    print(binance.res)
