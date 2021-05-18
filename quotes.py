@@ -136,15 +136,22 @@ class Binance(Manipulator):
         except:
             return False
 
+def _get_or_create_eventloop():
+    try:
+        return asyncio.get_event_loop()
+    except RuntimeError as ex:
+        if "There is no current event loop in thread" in str(ex):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return asyncio.get_event_loop()
+
 def get_future_data():
     deribit = Deribit()
     binance = Binance()
     bybit = Bybit()
-    asyncio.get_event_loop().run_until_complete(
+    _get_or_create_eventloop().run_until_complete(
         asyncio.gather(
             deribit.process(), binance.process(), bybit.process()
         )
     )
-    print(deribit.res)
-    print(bybit.res)
-    print(binance.res)
+    return { 'Deribit': deribit.res, 'Binance': binance.res, 'Bybit': bybit.res }
