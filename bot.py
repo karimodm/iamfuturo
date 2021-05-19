@@ -5,6 +5,7 @@ import os
 import re
 import uuid
 from emoji import emojize
+import logging
 
 import quotes
 import utils
@@ -117,6 +118,9 @@ def usage(update: Update, context: CallbackContext) -> None:
     msg = msg + "/myalerts - show your configured alerts\n"
     msg = msg + "/delalert - delete an active alert\n"
     update.effective_chat.send_message(msg)
+
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 storage = PicklePersistence(filename = './data/bot')
 
