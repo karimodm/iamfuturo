@@ -1,18 +1,50 @@
-from telegram import Update, ChatAction, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram import Update, ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, PicklePersistence
 from datetime import datetime
+import os
 import re
+import uuid
+from emoji import emojize
 
 import quotes
 import utils
 
 pick_data = None
 
-def ping(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(f'pong {update.effective_user.first_name}')
+def markalert_runner(context: CallbackContext) -> None:
+    alerts = context.bot_data['markalerts']
+    future_data = quotes.get_future_data()
+    flat_data = [i for s in list(future_data.values()) for i in s] # flatten data
+    alert_emoji = emojize(':droplet:', use_aliases = True)
+    def _match(alert):
+        return lambda data: data['source'] == alert['source'] and data['symbol'] == alert['symbol']
+    for alert in alerts:
+        matching = filter(_match(alert), flat_data)
+        for match in matching:
+            if match['mark'] >= alert['price']:
+                alert['user'].send_message(f"{alert_emoji} MARK ALERT:\n{alert['source']} -> {alert['symbol']}: {match['mark']} >= {alert['price']}")
 
-def overview(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Fetching data...')
+def basealert_runner(context: CallbackContext) -> None:
+    alerts = context.bot_data['basealerts']
+    future_data = quotes.get_future_data()
+    index_deribit = future_data['Deribit'][0]['index']
+    flat_data = [i for s in list(future_data.values()) for i in s] # flatten data
+    alert_emoji = emojize(':rotating_light:', use_aliases = True)
+    def _match(alert):
+        return lambda data: data['source'] == alert['source'] and data['symbol'] == alert['symbol']
+    for alert in alerts:
+        matching = filter(_match(alert), flat_data)
+        for match in matching:
+            index = match['index'] or index_deribit
+            base_p = round(float(match['mark'] - index) / index * 100, 2)
+            if base_p < 0.2:
+                alert['user'].send_message(f"{alert_emoji} BASE ALERT:\n{alert['source']} -> {alert['symbol']}: {base_p}%")
+
+def ping(update: Update, context: CallbackContext) -> None:
+    update.effective_chat.send_message(f'pong {update.effective_user.first_name}')
+
+def apr(update: Update, context: CallbackContext) -> None:
+    context.bot.send_chat_action(chat_id = update.effective_message.chat_id, action = ChatAction.TYPING)
     data = quotes.get_future_data()
     index_deribit = data['Deribit'][0]['index']
     for source in data.keys():
@@ -21,68 +53,92 @@ def overview(update: Update, context: CallbackContext) -> None:
             index = obj['index'] or index_deribit
             base_p = round(float(obj['mark'] - index) / index * 100, 2)
             apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
-            msg = msg + f"*{obj['symbol']}*\tB {base_p}%\tAPR {apr_p}%\n"
-        update.message.reply_markdown(msg)
+            msg = msg + f"*{obj['symbol']}*\tM {obj['mark']}\tB {base_p}%\tAPR {apr_p}%\n"
+        update.effective_chat.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
-def pick(update: Update, context: CallbackContext) -> None:
-    global pick_data
-    update.message.reply_text('Fetching data...')
-    pick_data = quotes.get_future_data()
-    data = pick_data
-    button_list = [ InlineKeyboardButton(source, callback_data = source) for source in data.keys() ]
-    reply_markup = InlineKeyboardMarkup(utils.build_menu(button_list, n_cols = 1))
-    update.message.reply_text("Choose from the source below:", reply_markup = reply_markup)
+def markalert(update: Update, context: CallbackContext) -> None:
+    if len(context.args) != 3:
+        update.message.reply_text(f"/markalert <source> <future_symbol> <price>")
+        return
 
-def sourcehandler(update: Update, context: CallbackContext) -> None:
-    global pick_data
-    data = pick_data
+    alerts = context.bot_data['markalerts']
 
-    source = update.callback_query.data
-    button_list = [ InlineKeyboardButton(e['symbol'], callback_data = f"{source}_{e['symbol']}") for e in data[source] ]
-    reply_markup = InlineKeyboardMarkup(utils.build_menu(button_list, n_cols = 2))
-    update._effective_message.reply_text(f"Pick future from {source}:", reply_markup = reply_markup)
+    id = str(uuid.uuid4())[:8]
+    source = context.args[0]
+    symbol = context.args[1]
+    price =  float(context.args[2])
 
-def futurehandler(update: Update, context: CallbackContext) -> None:
-    global pick_data
-    import ipdb
-    ipdb.set_trace()
-    source_future = update.callback_query.data
-    source = re.match('^([^_]+)_.+', source_future)[1]
-    button_list = [ 
-        InlineKeyboardButton("Mark Price Alert", callback_data = f"{source_future}_MARK"),
-        InlineKeyboardButton("Base Alert", callback_data = f"{source_future}_BASE")
-    ]
-    reply_markup = InlineKeyboardMarkup(utils.build_menu(button_list, n_cols = 2))
-    update._effective_message.reply_text("What do you want to do?", reply_markup = reply_markup)
+    alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol, 'price': price })
+    update.message.reply_text(f"I'll alert you when mark of *{symbol}* on *{source}* >= {price}")
 
-def markalerthandler(update: Update, context: CallbackContext) -> None:
-    import ipdb
-    ipdb.set_trace()
-    match = re.match('^([^_]+)_(.+)_MARK$', source_future)
-    source = match[1]
-    symbol = match[2]
-    update._effective_message.reply_text("Gimme the price (use '.' for decimals)")
+def basealert(update: Update, context: CallbackContext) -> None:
+    if len(context.args) != 2:
+        update.message.reply_text(f"/basealert <source> <future_symbol>")
+        return
 
-def basealerthandler(update: Update, context: CallbackContext) -> None:
-    import ipdb
-    ipdb.set_trace()
-    match = re.match('^([^_]+)_(.+)_BASE$', source_future)
-    source = match[1]
-    symbol = match[2]
+    alerts = context.bot_data['basealerts']
+
+    id = str(uuid.uuid4())[:8]
+    source = context.args[0]
+    symbol = context.args[1]
+
+    alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol })
+    update.message.reply_text(f"I'll alert you when base of *{symbol}* on *{source}* <= 0.2%")
 
 def myalerts(update: Update, context: CallbackContext) -> None:
-    pass
+    mark_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['markalerts'])
+    base_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['basealerts'])
+    msg = "BASE ALERTS:\n"
+    for alert in base_alerts:
+        msg = msg + f"*{alert['short_id']}*: {alert['source']} {alert['symbol']}\n"
+    msg = msg + "MARK ALERTS:\n"
+    for alert in mark_alerts:
+        msg = msg + f"*{alert['short_id']}*: {alert['source']} {alert['symbol']} {alert['price']}\n"
+    msg = msg.replace('_', '\_')
+    update.message.reply_markdown(msg)
 
-updater = Updater('1873243906:AAE4cP-fGRozRFQqcXBk8UMZ8lm_NWHNins')
+def delalert(update: Update, context: CallbackContext) -> None:
+    if len(context.args) != 1:
+        update.message.reply_text("/delalert <id>")
+        return
+    del_id = context.args[0]
+    mark_alerts = context.bot_data['markalerts']
+    base_alerts = context.bot_data['basealerts']
+    context.bot_data['markalerts'] = list(filter(lambda alert: alert['short_id'] != del_id or alert['user'] != update.effective_user, mark_alerts))
+    context.bot_data['basealerts'] = list(filter(lambda alert: alert['short_id'] != del_id or alert['user'] != update.effective_user, base_alerts))
+    update.message.reply_markdown(f"Deleted alert *{del_id}*")
+
+def usage(update: Update, context: CallbackContext) -> None:
+    msg = "You can control me by sending these commands:\n\n"
+    msg = msg + "/ping - check if I am alive!\n"
+    msg = msg + "/apr - get an futures overview from all supported sources\n"
+    msg = msg + "/markalert - set a mark price alert for a future\n"
+    msg = msg + "/basealert - set a 0.2% base alert for a future\n"
+    msg = msg + "/myalerts - show your configured alerts\n"
+    msg = msg + "/delalert - delete an active alert\n"
+    update.effective_chat.send_message(msg)
+
+storage = PicklePersistence(filename = './data/bot')
+
+updater = Updater(os.environ['TELEGRAM_TOKEN'], persistence = storage)
+
+if not 'basealerts' in updater.dispatcher.bot_data:
+    updater.dispatcher.bot_data['basealerts'] = []
+
+if not 'markalerts' in updater.dispatcher.bot_data:
+    updater.dispatcher.bot_data['markalerts'] = []
 
 updater.dispatcher.add_handler(CommandHandler('ping', ping))
-updater.dispatcher.add_handler(CommandHandler('overview', overview))
+updater.dispatcher.add_handler(CommandHandler('apr', apr))
+updater.dispatcher.add_handler(CommandHandler('markalert', markalert))
+updater.dispatcher.add_handler(CommandHandler('basealert', basealert))
 updater.dispatcher.add_handler(CommandHandler('myalerts', myalerts))
-updater.dispatcher.add_handler(CommandHandler('pick', pick))
-updater.dispatcher.add_handler(CallbackQueryHandler(markalerthandler, pattern = '\w+_\w+_MARK'))
-updater.dispatcher.add_handler(CallbackQueryHandler(basealerthandler, pattern = '\w+_\w+_BASE'))
-updater.dispatcher.add_handler(CallbackQueryHandler(futurehandler, pattern = '\w+_\w+'))
-updater.dispatcher.add_handler(CallbackQueryHandler(sourcehandler))
+updater.dispatcher.add_handler(CommandHandler('delalert', delalert))
+updater.dispatcher.add_handler(CommandHandler('help', usage))
+updater.dispatcher.add_handler(CommandHandler('start', usage))
+
+updater.job_queue.run_repeating(basealert_runner, 120)
+updater.job_queue.run_repeating(markalert_runner, 120)
 
 updater.start_polling()
 updater.idle()

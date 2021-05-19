@@ -8,8 +8,6 @@ import re
 import time
 import threading
 
-import ipdb
-
 class Manipulator:
     async def process(self):
         async with websockets.connect(self.uri) as websocket:
@@ -50,6 +48,7 @@ class Deribit(Manipulator):
                 return False
             self.syms.append(fut['instrument_name'])
             self.res.append({
+                'source': 'Deribit',
                 'symbol': fut['instrument_name'],
                 'mark'  : fut['mark_price'],
                 'last'  : fut['last_price'],
@@ -96,6 +95,7 @@ class Bybit(Manipulator):
             res = []
             for fut in inverse_futures:
                 res.append({
+                    'source': 'Bybit',
                     'symbol': fut['symbol'],
                     'mark'  : float(fut['mark_price_e4']) / 10000,
                     'last'  : float(fut['last_price_e4']) / 10000,
@@ -125,8 +125,9 @@ class Binance(Manipulator):
             res = []
             for fut in delivery_futures:
                 res.append({
+                    'source': 'Binance',
                     'symbol': fut['s'],
-                    'mark'  : float(fut['p']),
+                    'mark'  : round(float(fut['p']), 2),
                     'last'  : None,
                     'index' : None,
                     'expir' : self._determine_expiration(fut['s'])
