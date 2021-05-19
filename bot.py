@@ -69,7 +69,7 @@ def markalert(update: Update, context: CallbackContext) -> None:
     price =  float(context.args[2])
 
     alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol, 'price': price })
-    update.message.reply_text(f"I'll alert you when mark of *{symbol}* on *{source}* >= {price}")
+    update.message.reply_text(f"I'll alert you when mark of {symbol} on {source} >= {price}")
 
 def basealert(update: Update, context: CallbackContext) -> None:
     if len(context.args) != 2:
@@ -83,7 +83,7 @@ def basealert(update: Update, context: CallbackContext) -> None:
     symbol = context.args[1]
 
     alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol })
-    update.message.reply_text(f"I'll alert you when base of *{symbol}* on *{source}* <= 0.2%")
+    update.message.reply_text(f"I'll alert you when base of {symbol} on {source} <= 0.2%")
 
 def myalerts(update: Update, context: CallbackContext) -> None:
     mark_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['markalerts'])
