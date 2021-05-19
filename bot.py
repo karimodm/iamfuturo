@@ -29,7 +29,7 @@ def basealert_runner(context: CallbackContext) -> None:
     future_data = quotes.get_future_data()
     index_deribit = future_data['Deribit'][0]['index']
     flat_data = [i for s in list(future_data.values()) for i in s] # flatten data
-    alert_emoji = emojize(':rotating_light:', use_aliases = True)
+    alert_emoji = emojize(':moneybag:', use_aliases = True)
     def _match(alert):
         return lambda data: data['source'] == alert['source'] and data['symbol'] == alert['symbol']
     for alert in alerts:
