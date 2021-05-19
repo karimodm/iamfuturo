@@ -111,7 +111,7 @@ def delalert(update: Update, context: CallbackContext) -> None:
 def usage(update: Update, context: CallbackContext) -> None:
     msg = "You can control me by sending these commands:\n\n"
     msg = msg + "/ping - check if I am alive!\n"
-    msg = msg + "/apr - get an futures overview from all supported sources\n"
+    msg = msg + "/apr - get a futures overview from all supported sources\n"
     msg = msg + "/markalert - set a mark price alert for a future\n"
     msg = msg + "/basealert - set a 0.2% base alert for a future\n"
     msg = msg + "/myalerts - show your configured alerts\n"
