@@ -91,10 +91,10 @@ class Bybit(Manipulator):
     def accessor(self, obj):
         obj = json.loads(obj)
         try:
-            inverse_futures = list(filter(lambda e: re.match('BTCUSD[A-Z]\d{2}', e['symbol']), obj['data']))
-            res = []
+            inverse_futures = filter(lambda e: re.match('BTCUSD[A-Z]\d{2}', e['symbol']), obj['data'])
+            self.res = []
             for fut in inverse_futures:
-                res.append({
+                self.res.append({
                     'source': 'Bybit',
                     'symbol': fut['symbol'],
                     'mark'  : float(fut['mark_price_e4']) / 10000,
@@ -102,7 +102,6 @@ class Bybit(Manipulator):
                     'index' : float(fut['index_price_e4'])/ 10000,
                     'expir' : self._determine_expiration(fut['symbol'])
                 })
-            self.res = res
             return True
         except KeyError:
             return False
@@ -141,9 +140,10 @@ class BitMEX(Manipulator):
     uri = 'wss://www.bitmex.com/realtime'
     #{"table":"instrument","action":"update","data":[{"symbol":"XBTU21","openValue":368518057142,"fairBasis":965.78,"fairPrice":40542.96,"markPrice":40542.96,"indicativeSettlePrice":39577.18,"timestamp":"2021-05-20T06:13:45.000Z"}]}
 
-    def __init__(self, collect_timeout = 1):
+    def __init__(self, collect_timeout = 2):
         self.sub = {"op":"subscribe","args":["instrument"]}
         self.sub = json.dumps(self.sub)
+        self.syms = []
         self.res = []
         self.tick = time.time()
         self.collect_timeout = collect_timeout
@@ -175,7 +175,7 @@ class BitMEX(Manipulator):
             return True
         obj = json.loads(obj)
         try:
-            delivery_futures = filter(lambda e: re.match('XBT[A-Z]\d{2}', e['symbol']), obj['data'])
+            delivery_futures = filter(lambda e: re.match('XBT[A-Z]\d{2}', e['symbol']) and e['symbol'] not in self.syms, obj['data'])
             for fut in delivery_futures:
                 self.res.append({
                     'source': 'BitMEX',
@@ -185,6 +185,7 @@ class BitMEX(Manipulator):
                     'index' : fut['indicativeSettlePrice'],
                     'expir' : self._determine_expiration(fut['symbol'])
                 })
+                self.syms.append(fut['symbol'])
         finally:
             return False
 
