@@ -5,6 +5,7 @@ import os
 import re
 import uuid
 from emoji import emojize
+import logging
 
 import quotes
 import utils
@@ -37,7 +38,7 @@ def basealert_runner(context: CallbackContext) -> None:
         for match in matching:
             index = match['index'] or index_deribit
             base_p = round(float(match['mark'] - index) / index * 100, 2)
-            if base_p < 0.2:
+            if base_p < 0.5:
                 alert['user'].send_message(f"{alert_emoji} BASE ALERT:\n{alert['source']} -> {alert['symbol']}: {base_p}%")
 
 def ping(update: Update, context: CallbackContext) -> None:
@@ -86,7 +87,7 @@ def basealert(update: Update, context: CallbackContext) -> None:
     symbol = context.args[1]
 
     alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol })
-    update.message.reply_text(f"I'll alert you when base of {symbol} on {source} <= 0.2%")
+    update.message.reply_text(f"I'll alert you when base of {symbol} on {source} <= 0.5%")
 
 def myalerts(update: Update, context: CallbackContext) -> None:
     mark_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['markalerts'])
@@ -116,10 +117,13 @@ def usage(update: Update, context: CallbackContext) -> None:
     msg = msg + "/ping - check if I am alive!\n"
     msg = msg + "/apr - get a futures overview from all supported sources\n"
     msg = msg + "/markalert - set a mark price alert for a future\n"
-    msg = msg + "/basealert - set a 0.2% base alert for a future\n"
+    msg = msg + "/basealert - set a 0.5% base alert for a future\n"
     msg = msg + "/myalerts - show your configured alerts\n"
     msg = msg + "/delalert - delete an active alert\n"
     update.effective_chat.send_message(msg)
+
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 storage = PicklePersistence(filename = './data/bot')
 
