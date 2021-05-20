@@ -70,7 +70,7 @@ class Bybit(Manipulator):
         from datetime import datetime
         from dateutil.relativedelta import relativedelta, FR
         def switcher(symbol):
-            match = re.match('BTCUSD(.)(\d{2})', symbol)
+            match = re.match('BTCUSD([A-Z])(\d{2})', symbol)
             L = match[1]
             year = match[2]
 
@@ -121,7 +121,7 @@ class Binance(Manipulator):
     def accessor(self, obj):
         obj = json.loads(obj)
         try:
-            delivery_futures = list(filter(lambda e: re.match('BTCUSD_\d{6}', e['s']), obj))
+            delivery_futures = filter(lambda e: re.match('BTCUSD_\d{6}', e['s']), obj)
             res = []
             for fut in delivery_futures:
                 res.append({
@@ -137,6 +137,57 @@ class Binance(Manipulator):
         except:
             return False
 
+class BitMEX(Manipulator):
+    uri = 'wss://www.bitmex.com/realtime'
+    #{"table":"instrument","action":"update","data":[{"symbol":"XBTU21","openValue":368518057142,"fairBasis":965.78,"fairPrice":40542.96,"markPrice":40542.96,"indicativeSettlePrice":39577.18,"timestamp":"2021-05-20T06:13:45.000Z"}]}
+
+    def __init__(self, collect_timeout = 1):
+        self.sub = {"op":"subscribe","args":["instrument"]}
+        self.sub = json.dumps(self.sub)
+        self.res = []
+        self.tick = time.time()
+        self.collect_timeout = collect_timeout
+
+    def _determine_expiration(self, symbol):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta, FR
+        def switcher(symbol):
+            match = re.match('XBT([A-Z])(\d{2})', symbol)
+            L = match[1]
+            year = match[2]
+
+            if      L == 'K': # March
+                return datetime.strptime("0104" + year, "%d%m%y")
+            elif    L == 'M': # June
+                return datetime.strptime("0107" + year, "%d%m%y")
+            elif    L == 'U': # September
+                return datetime.strptime("0110" + year, "%d%m%y")
+            elif    L == 'Z': # December
+                return datetime.strptime("0101" + str(int(year) + 1), "%d%m%y")
+            else:
+                raise Exception("I do not understand this quarter letter!")
+
+        return switcher(symbol) + relativedelta(days=-1, weekday=FR(-1))
+
+
+    def accessor(self, obj):
+        if time.time() - self.tick > self.collect_timeout:
+            return True
+        obj = json.loads(obj)
+        try:
+            delivery_futures = filter(lambda e: re.match('XBT[A-Z]\d{2}', e['symbol']), obj['data'])
+            for fut in delivery_futures:
+                self.res.append({
+                    'source': 'BitMEX',
+                    'symbol': fut['symbol'],
+                    'mark'  : fut['fairPrice'],
+                    'last'  : None,
+                    'index' : fut['indicativeSettlePrice'],
+                    'expir' : self._determine_expiration(fut['symbol'])
+                })
+        finally:
+            return False
+
 def _get_or_create_eventloop():
     try:
         return asyncio.get_event_loop()
@@ -150,9 +201,10 @@ def get_future_data():
     deribit = Deribit()
     binance = Binance()
     bybit = Bybit()
+    bitmex = BitMEX()
     _get_or_create_eventloop().run_until_complete(
         asyncio.gather(
-            deribit.process(), binance.process(), bybit.process()
+            deribit.process(), binance.process(), bybit.process(), bitmex.process()
         )
     )
-    return { 'Deribit': deribit.res, 'Binance': binance.res, 'Bybit': bybit.res }
+    return { 'Deribit': deribit.res, 'Binance': binance.res, 'Bybit': bybit.res, 'BitMEX': bitmex.res }
