@@ -52,7 +52,10 @@ def apr(update: Update, context: CallbackContext) -> None:
         for obj in sorted(data[source], key = lambda e: e['expir']):
             index = obj['index'] or index_deribit
             base_p = round(float(obj['mark'] - index) / index * 100, 2)
-            apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
+            try:
+                apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
+            except ZeroDivisionError:
+                apr_p = float('inf')
             msg = msg + f"*{obj['symbol']}*\tM {obj['mark']}\tB {base_p}%\tAPR {apr_p}%\n"
         update.effective_chat.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
