@@ -7,14 +7,18 @@ import json
 import re
 import time
 import threading
+import logging
 
 class Manipulator:
     async def process(self):
-        async with websockets.connect(self.uri) as websocket:
-            await websocket.send(self.sub)
-            async for message in websocket:
-                if self.accessor(message):
-                    await websocket.close()
+        try:
+            async with websockets.connect(self.uri) as websocket:
+                await websocket.send(self.sub)
+                async for message in websocket:
+                    if self.accessor(message):
+                        await websocket.close()
+        except Exception as error:
+            logging.getLogger(self.__class__.__name__).error(error)
 
 class Deribit(Manipulator):
     uri = 'wss://www.deribit.com/ws/api/v2/'
@@ -65,6 +69,7 @@ class Bybit(Manipulator):
     def __init__(self):
         self.sub = {"op":"subscribe","args":["instrument_info.all"]}
         self.sub = json.dumps(self.sub)
+        self.res = []
 
     def _determine_expiration(self, symbol):
         from datetime import datetime
@@ -112,6 +117,7 @@ class Binance(Manipulator):
     def __init__(self):
         self.sub = { "method": "SUBSCRIBE", "params": [ "btcusd@markPrice@1s" ], "id": 1 }
         self.sub = json.dumps(self.sub)
+        self.res = []
 
     def _determine_expiration(self, symbol):
         from datetime import datetime
