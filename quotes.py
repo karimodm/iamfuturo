@@ -30,7 +30,7 @@ class Deribit(Manipulator):
         increment = 0 
         for weeks in range(54):
             next_friday = today + datetime.timedelta( (4-today.weekday()) % 7 + increment)
-            self.sub['params']['channels'].append("ticker." + next_friday.strftime("BTC-%d%b%y").upper() + ".100ms")
+            self.sub['params']['channels'].append("ticker." + next_friday.strftime("BTC-%d%b%y").replace('BTC-0', 'BTC-').upper() + ".100ms")
             increment = increment + 7
         self.sub = json.dumps(self.sub)
         self.syms = []
