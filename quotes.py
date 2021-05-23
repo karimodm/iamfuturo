@@ -211,6 +211,12 @@ def _get_or_create_eventloop():
             asyncio.set_event_loop(loop)
             return asyncio.get_event_loop()
 
+def get_future_data_from_source(manipulator: Manipulator):
+    _get_or_create_eventloop().run_until_complete(
+            manipulator.process()
+    )
+    return manipulator.res
+
 def get_future_data(coin = 'BTC'):
     deribit = Deribit(prefix = coin)
     binance = Binance(prefix = coin)

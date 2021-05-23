@@ -1,4 +1,4 @@
-from telegram import Update, ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+from telegram import Update, ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, User
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, PicklePersistence
 from datetime import datetime
 import os
@@ -6,6 +6,7 @@ import re
 import uuid
 from emoji import emojize
 import logging
+import functools
 
 import quotes
 import utils
@@ -56,6 +57,20 @@ def basealert_runner(context: CallbackContext) -> None:
                 alert['user'].send_message(f"{alert_emoji} BASE ALERT ({alert['short_id']}):\n{alert['source']} -> {alert['symbol']}: {base_p}%")
             elif base_p > alert['baseup_p']:
                 alert['user'].send_message(f"{occasion_emoji} BASEUP ALERT ({alert['short_id']}):\n{alert['source']} -> {alert['symbol']}: {base_p}%")
+
+def track_runner(user: User, source: str, symbol: str, context: CallbackContext) -> None:
+    coin = re.match('^[A-Z]{3}', symbol)[0]
+    manipulator = getattr(quotes, source)(prefix = coin)
+    data = quotes.get_future_data_from_source(manipulator)
+    for obj in filter(lambda data: data['symbol'] == symbol, data):
+        index = obj['index'] or float('+inf')
+        base_p = round(float(obj['mark'] - index) / index * 100, 2)
+        try:
+            apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
+        except ZeroDivisionError:
+            apr_p = float('inf')
+        msg = f"*{obj['symbol']}*\tM {obj['mark']}\tB {base_p}%\tAPR {apr_p}%\n"
+        user.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
 def ping(update: Update, context: CallbackContext) -> None:
     update.effective_chat.send_message(f'pong {update.effective_user.first_name}')
@@ -161,6 +176,25 @@ def delalert(update: Update, context: CallbackContext) -> None:
     context.bot_data['basealerts'] = list(filter(lambda alert: alert['short_id'] != del_id or alert['user'] != update.effective_user, base_alerts))
     update.message.reply_markdown(f"Deleted alert *{del_id}*")
 
+def track(update: Update, context: CallbackContext) -> None:
+    if len(context.args) != 2:
+        update.message.reply_text("/track <source> <symbol>")
+    wrapped = functools.partial(track_runner, update.effective_user, context.args[0], context.args[1])
+    id = str(uuid.uuid4())
+    job = context.job_queue.run_repeating(wrapped, 1, name = id)
+    try:
+        context.job_queue.get_jobs_by_name(context.user_data['track_job_id'])[0].schedule_removal()
+    except KeyError:
+        pass
+    finally:
+        context.user_data['track_job_id'] = id
+
+def stoptrack(update: Update, context: CallbackContext) -> None:
+    try:
+        context.job_queue.get_jobs_by_name(context.user_data['track_job_id'])[0].schedule_removal()
+    except KeyError:
+        pass
+
 def usage(update: Update, context: CallbackContext) -> None:
     msg = "You can control me by sending these commands:\n\n"
     msg = msg + "/ping - check if I am alive!\n"
@@ -171,6 +205,8 @@ def usage(update: Update, context: CallbackContext) -> None:
     msg = msg + "/baseupalert - set a > base alert for a future\n"
     msg = msg + "/myalerts - show your configured alerts\n"
     msg = msg + "/delalert - delete an active alert\n"
+    msg = msg + "/track - receive rapid updates about a specific future\n"
+    msg = msg + "/stoptrack - stop tracking\n"
     update.effective_chat.send_message(msg)
 
 
@@ -194,6 +230,8 @@ updater.dispatcher.add_handler(CommandHandler('basealert', basealert))
 updater.dispatcher.add_handler(CommandHandler('baseupalert', baseupalert))
 updater.dispatcher.add_handler(CommandHandler('myalerts', myalerts))
 updater.dispatcher.add_handler(CommandHandler('delalert', delalert))
+updater.dispatcher.add_handler(CommandHandler('track', track))
+updater.dispatcher.add_handler(CommandHandler('stoptrack', stoptrack))
 updater.dispatcher.add_handler(CommandHandler('help', usage))
 updater.dispatcher.add_handler(CommandHandler('start', usage))
 
