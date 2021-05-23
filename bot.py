@@ -14,8 +14,12 @@ pick_data = None
 
 def markalert_runner(context: CallbackContext) -> None:
     alerts = context.bot_data['markalerts']
-    future_data = quotes.get_future_data()
-    flat_data = [i for s in list(future_data.values()) for i in s] # flatten data
+    future_data_btc = quotes.get_future_data(coin = 'BTC')
+    future_data_eth = quotes.get_future_data(coin = 'ETH')
+
+    flat_data = [i for s in list(future_data_btc.values()) for i in s] # flatten data
+    flat_data_eth = [i for s in list(future_data_eth.values()) for i in s] # flatten data
+    flat_data.extend(flat_data_eth)
     alert_emoji = emojize(':droplet:', use_aliases = True)
     def _match(alert):
         return lambda data: data['source'] == alert['source'] and data['symbol'] == alert['symbol']
@@ -27,15 +31,24 @@ def markalert_runner(context: CallbackContext) -> None:
 
 def basealert_runner(context: CallbackContext) -> None:
     alerts = context.bot_data['basealerts']
-    future_data = quotes.get_future_data()
-    index_deribit = future_data['Deribit'][0]['index']
-    flat_data = [i for s in list(future_data.values()) for i in s] # flatten data
+    future_data_btc = quotes.get_future_data(coin = 'BTC')
+    future_data_eth = quotes.get_future_data(coin = 'ETH')
+
+    flat_data = [i for s in list(future_data_btc.values()) for i in s] # flatten data
+    flat_data_eth = [i for s in list(future_data_eth.values()) for i in s] # flatten data
+    flat_data.extend(flat_data_eth)
+    eth_index_deribit = future_data_eth['Deribit'][0]['index']
+    btc_index_deribit = future_data_btc['Deribit'][0]['index']
     alert_emoji = emojize(':moneybag:', use_aliases = True)
     def _match(alert):
         return lambda data: data['source'] == alert['source'] and data['symbol'] == alert['symbol']
     for alert in alerts:
         matching = filter(_match(alert), flat_data)
         for match in matching:
+            if re.match('BTC', alert['symbol']):
+                index_deribit = btc_index_deribit
+            else:
+                index_deribit = eth_index_deribit
             index = match['index'] or index_deribit
             base_p = round(float(match['mark'] - index) / index * 100, 2)
             if base_p < 0.5:
@@ -44,9 +57,9 @@ def basealert_runner(context: CallbackContext) -> None:
 def ping(update: Update, context: CallbackContext) -> None:
     update.effective_chat.send_message(f'pong {update.effective_user.first_name}')
 
-def apr(update: Update, context: CallbackContext) -> None:
+def apr(update: Update, context: CallbackContext, coin = 'BTC') -> None:
     context.bot.send_chat_action(chat_id = update.effective_message.chat_id, action = ChatAction.TYPING)
-    data = quotes.get_future_data()
+    data = quotes.get_future_data(coin = coin)
     index_deribit = data['Deribit'][0]['index']
     for source in data.keys():
         msg = f"--- {source} ---\n"
@@ -59,6 +72,9 @@ def apr(update: Update, context: CallbackContext) -> None:
                 apr_p = float('inf')
             msg = msg + f"*{obj['symbol']}*\tM {obj['mark']}\tB {base_p}%\tAPR {apr_p}%\n"
         update.effective_chat.send_message(msg, parse_mode = ParseMode.MARKDOWN)
+
+def apreth(update: Update, context: CallbackContext) -> None:
+    apr(update, context, coin = 'ETH')
 
 def markalert(update: Update, context: CallbackContext) -> None:
     if len(context.args) != 3:
@@ -115,7 +131,8 @@ def delalert(update: Update, context: CallbackContext) -> None:
 def usage(update: Update, context: CallbackContext) -> None:
     msg = "You can control me by sending these commands:\n\n"
     msg = msg + "/ping - check if I am alive!\n"
-    msg = msg + "/apr - get a futures overview from all supported sources\n"
+    msg = msg + "/apr - get a BTC futures overview from all supported sources\n"
+    msg = msg + "/apreth - get a ETH futures overview from all supported sources\n"
     msg = msg + "/markalert - set a mark price alert for a future\n"
     msg = msg + "/basealert - set a 0.5% base alert for a future\n"
     msg = msg + "/myalerts - show your configured alerts\n"
@@ -137,6 +154,7 @@ if not 'markalerts' in updater.dispatcher.bot_data:
 
 updater.dispatcher.add_handler(CommandHandler('ping', ping))
 updater.dispatcher.add_handler(CommandHandler('apr', apr))
+updater.dispatcher.add_handler(CommandHandler('apreth', apreth))
 updater.dispatcher.add_handler(CommandHandler('markalert', markalert))
 updater.dispatcher.add_handler(CommandHandler('basealert', basealert))
 updater.dispatcher.add_handler(CommandHandler('myalerts', myalerts))
