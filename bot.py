@@ -51,7 +51,7 @@ def basealert_runner(context: CallbackContext) -> None:
                 index_deribit = eth_index_deribit
             index = match['index'] or index_deribit
             base_p = round(float(match['mark'] - index) / index * 100, 2)
-            if base_p < 0.5:
+            if base_p <= alert['base_p']:
                 alert['user'].send_message(f"{alert_emoji} BASE ALERT:\n{alert['source']} -> {alert['symbol']}: {base_p}%")
 
 def ping(update: Update, context: CallbackContext) -> None:
@@ -92,8 +92,8 @@ def markalert(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(f"I'll alert you when mark of {symbol} on {source} >= {price}")
 
 def basealert(update: Update, context: CallbackContext) -> None:
-    if len(context.args) != 2:
-        update.message.reply_text(f"/basealert <source> <future_symbol>")
+    if len(context.args) != 3:
+        update.message.reply_text(f"/basealert <source> <future_symbol> <base_p>")
         return
 
     alerts = context.bot_data['basealerts']
@@ -101,16 +101,17 @@ def basealert(update: Update, context: CallbackContext) -> None:
     id = str(uuid.uuid4())[:8]
     source = context.args[0]
     symbol = context.args[1]
+    base_p = float(context.args[2])
 
-    alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol })
-    update.message.reply_text(f"I'll alert you when base of {symbol} on {source} <= 0.5%")
+    alerts.append({ 'short_id': id, 'user': update.effective_user, 'source': source, 'symbol': symbol, 'base_p' : base_p })
+    update.message.reply_text(f"I'll alert you when base of {symbol} on {source} <= {base_p}")
 
 def myalerts(update: Update, context: CallbackContext) -> None:
     mark_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['markalerts'])
     base_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['basealerts'])
     msg = "BASE ALERTS:\n"
     for alert in base_alerts:
-        msg = msg + f"*{alert['short_id']}*: {alert['source']} {alert['symbol']}\n"
+        msg = msg + f"*{alert['short_id']}*: {alert['source']} {alert['symbol']} {alert['base_p']}\n"
     msg = msg + "MARK ALERTS:\n"
     for alert in mark_alerts:
         msg = msg + f"*{alert['short_id']}*: {alert['source']} {alert['symbol']} {alert['price']}\n"
@@ -134,7 +135,7 @@ def usage(update: Update, context: CallbackContext) -> None:
     msg = msg + "/apr - get a BTC futures overview from all supported sources\n"
     msg = msg + "/apreth - get a ETH futures overview from all supported sources\n"
     msg = msg + "/markalert - set a mark price alert for a future\n"
-    msg = msg + "/basealert - set a 0.5% base alert for a future\n"
+    msg = msg + "/basealert - set a base alert for a future\n"
     msg = msg + "/myalerts - show your configured alerts\n"
     msg = msg + "/delalert - delete an active alert\n"
     update.effective_chat.send_message(msg)
