@@ -56,7 +56,6 @@ class Deribit(Manipulator):
                 'source': 'Deribit',
                 'symbol': fut['instrument_name'],
                 'mark'  : fut['mark_price'],
-                'last'  : fut['last_price'],
                 'index' : fut['index_price'],
                 'expir' : self._determine_expiration(fut['instrument_name'])
             })
@@ -105,7 +104,6 @@ class Bybit(Manipulator):
                     'source': 'Bybit',
                     'symbol': fut['symbol'],
                     'mark'  : float(fut['mark_price_e4']) / 10000,
-                    'last'  : float(fut['last_price_e4']) / 10000,
                     'index' : float(fut['index_price_e4'])/ 10000,
                     'expir' : self._determine_expiration(fut['symbol'])
                 })
@@ -116,10 +114,13 @@ class Bybit(Manipulator):
 class Binance(Manipulator):
     uri = 'wss://dstream.binance.com/ws/rawstream' 
 
-    def __init__(self, prefix = 'BTC'):
+    def __init__(self, prefix = 'BTC', collect_timeout = 4):
         self.prefix = prefix
-        self.sub = { "method": "SUBSCRIBE", "params": [ prefix.lower() + "usd@markPrice@1s" ], "id": 1 }
+        self.sub = { "method": "SUBSCRIBE", "params": [ prefix.lower() + "usd@markPrice@1s", prefix.lower() + "usd@indexPrice@1s" ], "id": 1 }
         self.sub = json.dumps(self.sub)
+        self.index = float('+inf')
+        self.tick = time.time()
+        self.collect_timeout = collect_timeout
         self.res = []
 
     def _determine_expiration(self, symbol):
@@ -127,29 +128,32 @@ class Binance(Manipulator):
         return datetime.strptime(symbol, f"{self.prefix}USD_%y%m%d")
 
     def accessor(self, obj):
+        if time.time() - self.tick > self.collect_timeout:
+            return True
         obj = json.loads(obj)
         try:
-            delivery_futures = filter(lambda e: re.match(self.prefix + 'USD_\d{6}', e['s']), obj)
-            res = []
-            for fut in delivery_futures:
-                res.append({
-                    'source': 'Binance',
-                    'symbol': fut['s'],
-                    'mark'  : round(float(fut['p']), 2),
-                    'last'  : None,
-                    'index' : None,
-                    'expir' : self._determine_expiration(fut['s'])
-                })
-            self.res = res
-            return True
-        except:
+            if 'e' in obj and obj['e'] == 'indexPriceUpdate':
+                self.index = round(float(obj['p']), 2)
+            else:
+                delivery_futures = filter(lambda e: re.match(self.prefix + 'USD_\d{6}', e['s']), obj)
+                res = []
+                for fut in delivery_futures:
+                    res.append({
+                        'source': 'Binance',
+                        'symbol': fut['s'],
+                        'mark'  : round(float(fut['p']), 2),
+                        'index' : self.index,
+                        'expir' : self._determine_expiration(fut['s'])
+                    })
+                self.res = res
+        finally:
             return False
 
 class BitMEX(Manipulator):
     uri = 'wss://www.bitmex.com/realtime'
     #{"table":"instrument","action":"update","data":[{"symbol":"XBTU21","openValue":368518057142,"fairBasis":965.78,"fairPrice":40542.96,"markPrice":40542.96,"indicativeSettlePrice":39577.18,"timestamp":"2021-05-20T06:13:45.000Z"}]}
 
-    def __init__(self, collect_timeout = 2, prefix = 'BTC'):
+    def __init__(self, collect_timeout = 4, prefix = 'BTC'):
         if prefix == 'BTC':
             self.prefix = 'XBT'
         else:
@@ -159,6 +163,7 @@ class BitMEX(Manipulator):
         self.syms = []
         self.res = []
         self.tick = time.time()
+        self.index = float('+inf')
         self.collect_timeout = collect_timeout
 
     def _determine_expiration(self, symbol):
@@ -188,14 +193,15 @@ class BitMEX(Manipulator):
             return True
         obj = json.loads(obj)
         try:
+            for spot in filter(lambda e: e['symbol'] == self.prefix + 'USD', obj['data']):
+                self.index = spot['lastPriceProtected']
             delivery_futures = filter(lambda e: re.match(self.prefix + '[A-Z]\d{2}', e['symbol']) and e['symbol'] not in self.syms, obj['data'])
             for fut in delivery_futures:
                 self.res.append({
                     'source': 'BitMEX',
                     'symbol': fut['symbol'],
                     'mark'  : fut['fairPrice'],
-                    'last'  : None,
-                    'index' : fut['indicativeSettlePrice'],
+                    'index' : self.index,
                     'expir' : self._determine_expiration(fut['symbol'])
                 })
                 self.syms.append(fut['symbol'])

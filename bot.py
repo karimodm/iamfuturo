@@ -38,8 +38,6 @@ def basealert_runner(context: CallbackContext) -> None:
     flat_data = [i for s in list(future_data_btc.values()) for i in s] # flatten data
     flat_data_eth = [i for s in list(future_data_eth.values()) for i in s] # flatten data
     flat_data.extend(flat_data_eth)
-    eth_index_deribit = future_data_eth['Deribit'][0]['index']
-    btc_index_deribit = future_data_btc['Deribit'][0]['index']
     alert_emoji = emojize(':moneybag:', use_aliases = True)
     occasion_emoji = emojize(':seedling:', use_aliases = True)
     def _match(alert):
@@ -47,11 +45,7 @@ def basealert_runner(context: CallbackContext) -> None:
     for alert in alerts:
         matching = filter(_match(alert), flat_data)
         for match in matching:
-            if re.match('BTC', alert['symbol']):
-                index_deribit = btc_index_deribit
-            else:
-                index_deribit = eth_index_deribit
-            index = match['index'] or index_deribit
+            index = match['index']
             base_p = round(float(match['mark'] - index) / index * 100, 2)
             if base_p <= alert['base_p']:
                 alert['user'].send_message(f"{alert_emoji} BASE ALERT ({alert['short_id']}):\n{alert['source']} -> {alert['symbol']}: {base_p}%")
@@ -63,7 +57,7 @@ def track_runner(user: User, source: str, symbol: str, context: CallbackContext)
     manipulator = getattr(quotes, source)(prefix = coin)
     data = quotes.get_future_data_from_source(manipulator)
     for obj in filter(lambda data: data['symbol'] == symbol, data):
-        index = obj['index'] or float('+inf')
+        index = obj['index']
         base_p = round(float(obj['mark'] - index) / index * 100, 2)
         try:
             apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
@@ -78,11 +72,10 @@ def ping(update: Update, context: CallbackContext) -> None:
 def apr(update: Update, context: CallbackContext, coin = 'BTC') -> None:
     context.bot.send_chat_action(chat_id = update.effective_message.chat_id, action = ChatAction.TYPING)
     data = quotes.get_future_data(coin = coin)
-    index_deribit = data['Deribit'][0]['index']
     for source in data.keys():
         msg = f"--- {source} ---\n"
         for obj in sorted(data[source], key = lambda e: e['expir']):
-            index = obj['index'] or index_deribit
+            index = obj['index']
             base_p = round(float(obj['mark'] - index) / index * 100, 2)
             try:
                 apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
