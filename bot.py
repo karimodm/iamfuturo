@@ -63,7 +63,7 @@ def track_runner(user: User, source: str, symbol: str, context: CallbackContext)
             apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
         except ZeroDivisionError:
             apr_p = float('inf')
-        msg = f"*{obj['symbol']}*\tM {obj['mark']}\tB {base_p}%\tAPR {apr_p}%\n"
+        msg = f"`{obj['symbol']}\tM {obj['mark']}\tI {obj['index']}\tB {base_p}%\t APR {apr_p}%`\n"
         user.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
 def ping(update: Update, context: CallbackContext) -> None:
@@ -81,7 +81,7 @@ def apr(update: Update, context: CallbackContext, coin = 'BTC') -> None:
                 apr_p = round(base_p / (obj['expir'] - datetime.today()).days * 365, 2)
             except ZeroDivisionError:
                 apr_p = float('inf')
-            msg = msg + f"*{obj['symbol']}*\tM {obj['mark']}\tB {base_p}%\tAPR {apr_p}%\n"
+            msg = msg + f"`{obj['symbol']}\tM {obj['mark']}\tI {obj['index']}\tB {base_p}%\tAPR {apr_p}%`\n"
         update.effective_chat.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
 def apreth(update: Update, context: CallbackContext) -> None:
