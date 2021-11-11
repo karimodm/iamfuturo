@@ -80,7 +80,7 @@ class Bybit(Manipulator):
             L = match[1]
             year = match[2]
 
-            if      L == 'K': # March
+            if      L == 'K' or L == 'H': # March
                 return datetime.strptime("0104" + year, "%d%m%y")
             elif    L == 'M': # June
                 return datetime.strptime("0107" + year, "%d%m%y")
@@ -174,7 +174,7 @@ class BitMEX(Manipulator):
             L = match[1]
             year = match[2]
 
-            if      L == 'K': # March
+            if      L == 'K' or L == 'H': # March
                 return datetime.strptime("0104" + year, "%d%m%y")
             elif    L == 'M': # June
                 return datetime.strptime("0107" + year, "%d%m%y")
