@@ -183,6 +183,7 @@ def track(update: Update, context: CallbackContext) -> None:
     logging.info("/track %s from %s" % (context.args, update.effective_user.name))
     if len(context.args) != 2:
         update.message.reply_text("/track <source> <symbol>")
+        return
     wrapped = functools.partial(track_runner, update.effective_user, context.args[0], context.args[1])
     id = str(uuid.uuid4())
     context.job_queue.run_repeating(wrapped, 1, name = id)
