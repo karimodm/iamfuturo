@@ -10,11 +10,10 @@ import functools
 
 import quotes
 
-pick_data = None
-
 def markalert_runner(context: CallbackContext) -> None:
     alerts = context.bot_data['markalerts']
-    logging.info("Processing markalerts %s" % alerts)
+    logging.info("Processing markalerts")
+    _log_alerts(alerts)
     future_data_btc = quotes.get_future_data(coin = 'BTC')
     future_data_eth = quotes.get_future_data(coin = 'ETH')
 
@@ -32,7 +31,8 @@ def markalert_runner(context: CallbackContext) -> None:
 
 def basealert_runner(context: CallbackContext) -> None:
     alerts = context.bot_data['basealerts']
-    logging.info("Processing basealerts %s" % alerts)
+    logging.info("Processing basealerts")
+    _log_alerts(alerts)
     future_data_btc = quotes.get_future_data(coin = 'BTC')
     future_data_eth = quotes.get_future_data(coin = 'ETH')
 
@@ -216,6 +216,9 @@ def usage(update: Update, context: CallbackContext) -> None:
     msg = msg + "/stoptrack - stop tracking\n"
     update.effective_chat.send_message(msg)
 
+def _log_alerts(alerts):
+    for alert in alerts:
+        logging.info("%s for %s", alert, alert['user'].name)
 
 try:
     logLevel = logging._nameToLevel[os.environ["LOG_LEVEL"]]
@@ -225,8 +228,6 @@ except KeyError:
 logging.basicConfig(level=logLevel, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 storage = PicklePersistence(filename = './data/bot')
-
-logging.info("Loaded storage %s", storage)
 
 updater = Updater(os.environ['TELEGRAM_TOKEN'], persistence = storage)
 
