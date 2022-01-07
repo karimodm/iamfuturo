@@ -9,12 +9,12 @@ import logging
 import functools
 
 import quotes
-import utils
 
 pick_data = None
 
 def markalert_runner(context: CallbackContext) -> None:
     alerts = context.bot_data['markalerts']
+    logging.info("Processing markalerts %s" % alerts)
     future_data_btc = quotes.get_future_data(coin = 'BTC')
     future_data_eth = quotes.get_future_data(coin = 'ETH')
 
@@ -32,6 +32,7 @@ def markalert_runner(context: CallbackContext) -> None:
 
 def basealert_runner(context: CallbackContext) -> None:
     alerts = context.bot_data['basealerts']
+    logging.info("Processing basealerts %s" % alerts)
     future_data_btc = quotes.get_future_data(coin = 'BTC')
     future_data_eth = quotes.get_future_data(coin = 'ETH')
 
@@ -52,7 +53,8 @@ def basealert_runner(context: CallbackContext) -> None:
             elif base_p > alert['baseup_p']:
                 alert['user'].send_message(f"{occasion_emoji} BASEUP ALERT ({alert['short_id']}):\n{alert['source']} -> {alert['symbol']}: {base_p}%")
 
-def track_runner(user: User, source: str, symbol: str, context: CallbackContext) -> None:
+def track_runner(user: User, source: str, symbol: str, _: CallbackContext) -> None:
+    logging.info("Track runner pass %s %s from %s" % (source, symbol, user.name))
     coin = re.match('^[A-Z]{3}', symbol)[0]
     manipulator = getattr(quotes, source)(prefix = coin)
     data = quotes.get_future_data_from_source(manipulator)
@@ -67,9 +69,11 @@ def track_runner(user: User, source: str, symbol: str, context: CallbackContext)
         user.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
 def ping(update: Update, context: CallbackContext) -> None:
+    logging.info("/ping from %s" % update.effective_user.name)
     update.effective_chat.send_message(f'pong {update.effective_user.first_name}')
 
 def apr(update: Update, context: CallbackContext, coin = 'BTC') -> None:
+    logging.info("/apr from %s" % update.effective_user.name)
     context.bot.send_chat_action(chat_id = update.effective_message.chat_id, action = ChatAction.TYPING)
     data = quotes.get_future_data(coin = coin)
     for source in data.keys():
@@ -85,9 +89,11 @@ def apr(update: Update, context: CallbackContext, coin = 'BTC') -> None:
         update.effective_chat.send_message(msg, parse_mode = ParseMode.MARKDOWN)
 
 def apreth(update: Update, context: CallbackContext) -> None:
+    logging.info("/apreth from %s" % update.effective_user.name)
     apr(update, context, coin = 'ETH')
 
 def markalert(update: Update, context: CallbackContext) -> None:
+    logging.info("/markalert %s from %s" % (context.args, update.effective_user.name))
     if len(context.args) != 3:
         update.message.reply_text(f"/markalert <source> <future_symbol> <price>")
         return
@@ -103,6 +109,7 @@ def markalert(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(f"I'll alert you when mark of {symbol} on {source} >= {price}")
 
 def basealert(update: Update, context: CallbackContext) -> None:
+    logging.info("/basealert %s from %s" % (context.args, update.effective_user.name))
     if len(context.args) != 3:
         update.message.reply_text(f"/basealert <source> <future_symbol> <base_p>")
         return
@@ -125,6 +132,7 @@ def basealert(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(f"I'll alert you when base of {symbol} on {source} <= {base_p}")
 
 def baseupalert(update: Update, context: CallbackContext) -> None:
+    logging.info("/baseupalert %s from %s" % (context.args, update.effective_user.name))
     if len(context.args) != 3:
         update.message.reply_text(f"/baseupalert <source> <future_symbol> <baseup_p>")
         return
@@ -147,6 +155,7 @@ def baseupalert(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(f"I'll alert you when base of {symbol} on {source} > {baseup_p}")
 
 def myalerts(update: Update, context: CallbackContext) -> None:
+    logging.info("/myalerts from %s" % update.effective_user.name)
     mark_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['markalerts'])
     base_alerts = filter(lambda alert: alert['user'] == update.effective_user, context.bot_data['basealerts'])
     msg = "BASE ALERTS:\n"
@@ -159,6 +168,7 @@ def myalerts(update: Update, context: CallbackContext) -> None:
     update.message.reply_markdown(msg)
 
 def delalert(update: Update, context: CallbackContext) -> None:
+    logging.info("/delalert %s from %s" % (context.args, update.effective_user.name))
     if len(context.args) != 1:
         update.message.reply_text("/delalert <id>")
         return
@@ -170,11 +180,12 @@ def delalert(update: Update, context: CallbackContext) -> None:
     update.message.reply_markdown(f"Deleted alert *{del_id}*")
 
 def track(update: Update, context: CallbackContext) -> None:
+    logging.info("/track %s from %s" % (context.args, update.effective_user.name))
     if len(context.args) != 2:
         update.message.reply_text("/track <source> <symbol>")
     wrapped = functools.partial(track_runner, update.effective_user, context.args[0], context.args[1])
     id = str(uuid.uuid4())
-    job = context.job_queue.run_repeating(wrapped, 1, name = id)
+    context.job_queue.run_repeating(wrapped, 1, name = id)
     try:
         context.job_queue.get_jobs_by_name(context.user_data['track_job_id'])[0].schedule_removal()
     except KeyError:
@@ -183,12 +194,14 @@ def track(update: Update, context: CallbackContext) -> None:
         context.user_data['track_job_id'] = id
 
 def stoptrack(update: Update, context: CallbackContext) -> None:
+    logging.info("/stoptrack from %s" % update.effective_user.name)
     try:
         context.job_queue.get_jobs_by_name(context.user_data['track_job_id'])[0].schedule_removal()
     except KeyError:
         pass
 
 def usage(update: Update, context: CallbackContext) -> None:
+    logging.info("/help from %s" % update.effective_user.name)
     msg = "You can control me by sending these commands:\n\n"
     msg = msg + "/ping - check if I am alive!\n"
     msg = msg + "/apr - get a BTC futures overview from all supported sources\n"
@@ -203,9 +216,16 @@ def usage(update: Update, context: CallbackContext) -> None:
     update.effective_chat.send_message(msg)
 
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+try:
+    logLevel = logging._nameToLevel[os.environ["LOG_LEVEL"]]
+except KeyError:
+    logLevel = logging.INFO
+
+logging.basicConfig(level=logLevel, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 storage = PicklePersistence(filename = './data/bot')
+
+logging.info("Loaded storage %s", storage)
 
 updater = Updater(os.environ['TELEGRAM_TOKEN'], persistence = storage)
 
@@ -232,4 +252,9 @@ updater.job_queue.run_repeating(basealert_runner, 120)
 updater.job_queue.run_repeating(markalert_runner, 120)
 
 updater.start_polling()
+
+logging.info("Futuro is here!!")
+
 updater.idle()
+
+logging.info("Exiting...")

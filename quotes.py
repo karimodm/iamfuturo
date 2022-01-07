@@ -6,7 +6,6 @@ import datetime
 import json
 import re
 import time
-import threading
 import logging
 
 class Manipulator:
